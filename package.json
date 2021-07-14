@@ -1,0 +1,15 @@
+{
+  "name": "ts",
+  "version": "1.0.0",
+  "description": "just study",
+  "main": "app.js",
+  "scripts": {
+    "test": "hello world"
+  },
+  "keywords": [
+    "angural",
+    "typescript"
+  ],
+  "author": "kimch",
+  "license": "ISC"
+}
