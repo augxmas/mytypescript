@@ -53,6 +53,8 @@ export const getData = functions.https.onRequest((request, response) => {
 
 /**
  * 전체 기관(예: 순천향대학교, 커뮤니티매핑)의 이름만 반환해 줌
+ * no parameter
+ * return name
  */
 export const getOrganizations = functions.https.onRequest((request, response) => {
   functions.logger.info("Hello World", {structuredData: true});
@@ -67,6 +69,7 @@ export const getOrganizations = functions.https.onRequest((request, response) =>
  *  organizationCode : code
  *  organizationKey : key
  * }
+ * return encKey
  */
 export const isCorrect4Organization = functions.https.onRequest((request, response) => {
   functions.logger.info("Hello World", {structuredData: true});
