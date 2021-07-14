@@ -8,11 +8,26 @@ export const helloWorld = functions.https.onRequest((request, response) => {
    response.send("Hello World");
  });
 
+
 /**
+ * 파일 전송이 성공하면 파일명을 파라미터로 하여 호출함
+ * return : 입력된 데이타 건수 (통상적이라면 60) , -1 이면 오류발생을 의미
+ */
+ export const dispatch = functions.https.onRequest((request, response) => {
+  
+  functions.logger.info("Hello World", {structuredData: true});
+  response.send("Hello World");
+});
+
+
+
+/**
+ * Not used !!!!!! by 김창호
  * 공기질 파일 데이타를 storage에 저장
  * 파일명은 serialNum_yyyymmdd24HHminSS_TimeZone_SiteCode.log 형식으로 지정하여 폰에서 업로드할 수 있도록 함
  */
 export const uploadFile = functions.https.onRequest((request, response) => {
+  
   functions.logger.info("Hello World", {structuredData: true});
   response.send("Hello World");
 });
@@ -27,7 +42,7 @@ export const uploadFile = functions.https.onRequest((request, response) => {
  *  periodFrom  : yyyymmdd ,
  *  periodTo    : yyyymmdd ,
  *  timezone    : GMT+9 ,
- *  sitecode        : 1234567890123456,
+ *  sitecode    : 1234567890123456,
  *  encKey      : organization_enc_key ( = IV_TEXT)
  * }
  */
