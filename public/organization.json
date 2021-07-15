@@ -1,0 +1,5 @@
+{ 
+    "organization" :  [ {"siteCode": "unv_0001", "name": "순천향대학교"}, {"siteCode": "org_0001", "name": "커뮤니티매핑"}  ] ,
+    "auth" : { "siteCode": "unv_0001", "key": "1234"}
+}
+
