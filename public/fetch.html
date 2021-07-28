@@ -1,0 +1,37 @@
+
+<html>
+    <head>
+        <title>Download</title>
+    </head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script>
+        function download(){
+            fetch('https://us-central1-mytypescript-62c14.cloudfunctions.net/getData', {
+                method: 'post',
+                body: JSON.stringify({
+                    fromDate: document.forms[0].fromDate.value,
+                    toDate: document.forms[0].toDate.value,
+                    serialNum : document.forms[0].serialNum.value,
+                })
+              })
+              .then(res => {
+                if (res.status === 200) {
+                    alert("저장 완료");
+                } else if (res.status === 403) {
+                    return res.json();
+                }
+              })
+              .then(res => {
+                console.log("에러 메시지 ->", res.message);
+              })//*/
+        }
+    </script>
+    <body>
+        <form>
+            from <input type='text' name='fromDate' value='20210722000000'><br>
+            to <input type='text' name='toDate' value='20210722235959'><br>
+            serialNum <input type='text' name='serialNum' value='abc'><br>
+            <input type='button' onclick='download()'/>
+        </form>
+    </body>
+</html>

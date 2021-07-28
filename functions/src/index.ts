@@ -1,7 +1,6 @@
-//import * as functions from "firebase-functions";
 import * as functions from "firebase-functions";
 import * as admin from 'firebase-admin';
-
+import * as fs from 'fs';
 
 
 /*
@@ -15,12 +14,21 @@ admin.initializeApp({
 })
 */
 
-const organizations:string = "organizations";
-//let organization:string = "organization";
-//const fileLocation:string = "gs://default-bucket/";
+/**
+ * 측정 기관 collection
+ * 기관의 siteCode naming rules
+ * 대학 : unv_0001 ~ unv_9999
+ * 공공기관 : org_0001 ~ org_9999
+ */
+const organizations:string  = "organizations";
+
+/**
+ * 공기질 측정 결과 집합 
+ * siteCode | serialNum | lat | long | reportTime | pm5 | pm10 | temp | humid | vocs | co2 | timeZone
+ */
+const airqualities:string = 'airqualities';
 
 admin.initializeApp();
-
 
 export const helloWorld = functions.https.onRequest((request, response) => {
   functions.logger.info("Hello World", {structuredData: true});
@@ -47,7 +55,8 @@ export const helloWorld = functions.https.onRequest((request, response) => {
       });
     });
     response.setHeader("Content-Type","application/json");
-    response.status(200).json(JSON.stringify(outputArray));
+    functions.logger.debug(JSON.stringify(outputArray));
+    response.status(200).json(outputArray);
   }catch(error){
     response.status(500).json(error.message);
   }
@@ -58,32 +67,80 @@ export const helloWorld = functions.https.onRequest((request, response) => {
  * 파일 전송이 성공하면 파일명을 파라미터로 하여 호출함
  * return : 입력된 데이타 건수 (통상적이라면 60) , -1 이면 오류발생을 의미
  */
- export const dispatch = functions.https.onRequest(async (request, response) => {
-  functions.logger.info("dispatch", {structuredData: true});
-  const fileName = request.body.fileName;
-  
-  const storage =  admin.storage();
+ export const dispatch =  functions.https.onRequest( async  (request, response) => {
 
-  // const [files] = await storage.bucket("gs://default-bucket/").getFiles(); length 0
-  // const [files] = await storage.bucket("default-bucket").getFiles(); 
-  const [files] = await storage.bucket('default-bucket').getFiles(); 
+   try{
 
-  console.log('Files:' + files.length + storage.app.name);
-  files.forEach(file => {
-    //console.log(fileName + file.name);
-    functions.logger.debug(file.name+fileName);
-  });
-  
-  
+    functions.logger.info("dispatch", {structuredData: true});
+    
+    //let bucket = await admin.storage().bucket("mytypescript-62c14.appspot.com");
+    let bucket = await admin.storage().bucket("default-bucket");
+    
+    const fileName = await request.body.fileName;
 
-  //const files = bucket.getFilesStream(fileName);
-  
-  /*
-  const obj = {
-    rows: files.
-  }*/
-  
-  response.status(200).json("obj");
+
+    //const options = {      destination: "/tmp/"+fileName    };
+    const options = {      destination: fileName    };
+
+    
+    const _file = await bucket.file(fileName);
+
+    const db = admin.firestore();
+
+    try{
+      await _file.download(options);
+    }catch(error){
+      console.log(error);
+    }
+
+    response.setHeader("Content-Type","application/json");
+    let cnt:number = 0;
+    // let file = fs.readFileSync("/tmp/"+fileName);
+    let file = fs.readFileSync(fileName);
+    // reference siteCode via log file name
+    const dump = fileName.split('-');
+
+    const msg = file.toString();
+    const arr = msg.replace(/\r\n/g,'\n').split('\n');
+        
+    for(let f of arr) {
+      const str  = f.toString().replace(/\r\n/g,'\n').split('|');
+      let i:number = 0;
+        const obj = {
+          siteCode    : dump[0],
+          serialNum   : str[i++],
+          lat         : str[i++],
+          long        : str[i++],
+          reportTime  : str[i++],
+          pm5         : str[i++],
+          pm10        : str[i++],
+          temp        : str[i++],
+          humid       : str[i++],
+          vocs        : str[i++],
+          co2         : str[i++],
+          timeZone    : str[i++],
+        }
+      i = 0;
+      const doc = db.collection(airqualities).doc();
+      
+      doc.create(obj);
+      cnt++;
+    }
+    
+    const result = {
+      "rows" : cnt
+    }
+    response.status(200).json(result);    
+    _file.delete();
+
+  }catch(error){
+    console.log(error);
+    const result = {
+      message : "Error occur ! while log dispatching"
+    }
+    response.status(500).json(result);  
+  }
+
   
 });
 
@@ -97,17 +154,134 @@ export const helloWorld = functions.https.onRequest((request, response) => {
  *  serialNum   : 23:34:34:34 ,
  *  periodFrom  : yyyymmdd ,
  *  periodTo    : yyyymmdd ,
- *  timezone    : GMT+9 ,
+ *  timeZone    : GMT+9 ,
  *  sitecode    : 1234567890123456,
  *  encKey      : organization_enc_key ( = IV_TEXT)
  * }
  */
-export const getData = functions.https.onRequest((request, response) => {
-  functions.logger.info("Hello World", {structuredData: true});
-  response.send("Hello World");
+export const getData = functions.https.onRequest(async(request, response) => {
+  
+  functions.logger.info("getData", {structuredData: true});
+
+  const serialNum     =  request.body.serialNum;
+  const fromDate      = request.body.fromDate;
+  const toDate        =  request.body.toDate;
+  const siteCode      =  request.body.siteCode;
+  const key           = request.body.key;
+  const format:string        = request.body.format;
+
+  const iFromDate = Number(fromDate);
+  const iToDate = Number(toDate);
+
+  if(iToDate - iFromDate > 10000){ // 1 hour
+    const obj = {
+      message : "Too big, Condition Period only within One Hour"
+    };
+    response.status(403).json(obj);  
+    return;
+  }
+
+  const db = admin.firestore();
+  let ref = db.collection(organizations).where("siteCode", "==" , siteCode).where("key", "==" , key).get();
+  await ref.then(function( snapshot){
+    if ( snapshot.size == 0 ){
+      const obj = {
+        message : "Not Found Site"
+      };
+      response.status(404).json(obj);  
+      return;
+    }
+  }).catch(error=>{
+    console.log(error);
+    const obj = {
+      message : "Internal Server Error",
+      content : error.message
+    };
+    response.status(500).json(obj);  
+    return;
+  });
+
+  ref = db.collection(airqualities)
+  .where("siteCode","==", siteCode)
+  .where("reportTime", ">=" , fromDate)
+  .where("reportTime", "<" , toDate).get();//*/
+
+  if(format.toLocaleLowerCase() === "csv"){
+
+    await ref.then(function( snapshot){
+      try{
+        response.setHeader("Content-Type","text/csv");
+      }catch(error){
+        console.log(error);
+      }
+      let buffer:string = "SerialNum, Co2, Humid, Pm10, Pm5, Temp, Vocs, timeZone, ReportTime, Lat, Long," + "\n";
+      let str:string = "";
+  
+      snapshot.forEach(async (doc)=>{
+          str = doc.get("serialNum")      + "," 
+          + doc.get("co2")                + "," 
+          + doc.get("humid")              + "," 
+          + doc.get("pm10")               + "," 
+          + doc.get("pm5")                + "," 
+          + doc.get("temp")               + "," 
+          + doc.get("vocs")               + ","
+          + doc.get("timeZone")           + ","
+          + doc.get("reportTime")         + ","
+          + doc.get("lat")                + "," 
+          + doc.get("long")               + "," +"\n";
+          buffer += str;       
+      });
+      response.setHeader("Content-Disposition", "attachment; filename=" + serialNum + "_" + fromDate+ "_"  + toDate + ".csv");
+      response.status(200).send(buffer) ;
+      return;
+    }).catch(error=>{
+      console.log(error);
+      const obj = {
+        message : "Internal Server Error",
+        content : error.message
+      };
+      response.status(500).json(obj);  
+    });
+  }
+
+  if(format.toLocaleLowerCase() === "json"){
+    try{
+      try{
+        response.setHeader("Content-Type","application/json");
+      }catch(error){
+        console.log(error);
+      }
+      let outputArray:any = [];
+  
+      (await ref).forEach(  (doc)=>{
+        outputArray.push({
+          serialNum : doc.get('serialNum'),
+          co2 : doc.get("co2"),
+          humid : doc.get("humid"),
+          pm10 : doc.get("pm10"),
+          pm5 : doc.get("pm5"),
+          temp : doc.get("temp"),
+          vocs : doc.get("vocs"),
+          timeZone : doc.get("timeZone"),
+          reportTime : doc.get("reportTime"),          
+          lat : doc.get("lat"),
+          long : doc.get("long"),
+        });
+      });
+      response.status(200).json(outputArray);
+    }catch(error){
+      console.log(error);
+      const obj = {
+        message : "Internal Server Error",
+        content : error.message
+      };
+      response.status(500).json(obj);  
+    }
+    return;  
+  
+  }
+
 });
-
-
 
 /**
  * 사용자가 선택한 기관정보가 옭고 그른지를 판단
@@ -122,37 +296,39 @@ export const getData = functions.https.onRequest((request, response) => {
  */
 export const isCorrect4Organization = functions.https.onRequest(async (request, response) => {
   functions.logger.info("isCorrect4Organization", {structuredData: true});
-  const db = admin.firestore();
+  try{
+    const db = admin.firestore();
+    let siteCode:string;
+    siteCode = request.body.siteCode;
+    let key:string ;
+    key = request.body.key;
+    let isFound:boolean = false;
 
-  let siteCode:string;
-  siteCode = request.body.siteCode;
-  let key:string ;
-  key = request.body.key;
-
-
-  let isFound:boolean = false;
-  let str:string = '';
-  const ref = db.collection(organizations).where("siteCode", "==" , siteCode).where("key", "==" , key).get();
-  await ref.then(function( snapshot){
-     snapshot.forEach(async (doc)=>{
-      isFound = true;
-      const obj = {
-        encKey : doc.get("encKey")
-      }
-      str = JSON.stringify(obj);
-      functions.logger.debug(str);
+    const ref = db.collection(organizations).where("siteCode", "==" , siteCode).where("key", "==" , key).get();
+    response.setHeader("Content-Type","application/json");
+    await ref.then(function( snapshot){
+      snapshot.forEach(async (doc)=>{
+        isFound = true;
+        const obj = {
+          encKey : doc.get("encKey")
+        }
+        response.status(200).json(obj); 
+        return;
+      });
     });
-  });
+    if(isFound){
 
-
-  if(isFound){
-    response.status(200).json(str);  
-  }else{
-    str =  "{ \"message\": \"Not Found\"}";
-    response.status(404).json(str);  
+    }else{
+      const obj = {
+        message : "not found"
+      };
+      response.status(404).json(obj);  
+    }    
+  }catch(error){
+    response.status(500).json(error);  
   }
-
 }); 
+
 
 /**
  * 기관 등록 
@@ -166,7 +342,7 @@ export const isCorrect4Organization = functions.https.onRequest(async (request, 
  */
 export const upsertOrganization = functions.https.onRequest((request, response) => {
   try{
-    functions.logger.info("isCorrect4Organization", {structuredData: true});
+    functions.logger.info("upsertOrganization", {structuredData: true});
     const db = admin.firestore();
     const entry = db.collection('organizations').doc();
     const entryObject = {
