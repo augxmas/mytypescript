@@ -11,5 +11,10 @@
     "typescript"
   ],
   "author": "kimch",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "g": "^2.0.1",
+    "ip-geolocation-api-sdk-typescript": "^1.0.5",
+    "ts2php": "^0.30.3"
+  }
 }

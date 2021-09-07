@@ -1,37 +1,78 @@
 
 <html>
     <head>
-        <title>Download</title>
+        <title>Ref Air Quality Demo</title>
     </head>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
     <script>
         function download(){
-            fetch('https://us-central1-mytypescript-62c14.cloudfunctions.net/getData', {
-                method: 'post',
-                body: JSON.stringify({
-                    fromDate: document.forms[0].fromDate.value,
-                    toDate: document.forms[0].toDate.value,
-                    serialNum : document.forms[0].serialNum.value,
-                })
-              })
-              .then(res => {
-                if (res.status === 200) {
-                    alert("저장 완료");
-                } else if (res.status === 403) {
-                    return res.json();
+            document.getElementById("content").innerHTML = "";
+            $.ajax( {
+                url : 'https://us-central1-mytypescript-62c14.cloudfunctions.net/getData',
+                type: 'POST',
+                contentType:"application/json",
+                crossOrigin : true,
+                dataType:"application/json",
+                data: JSON.stringify({
+                    "fromDate"  : document.getElementById("fromDate").value,
+                    "toDate"    : document.getElementById("toDate").value,
+                    "siteCode"  : document.getElementById("siteCode").value,
+                    "key"       : document.getElementById("key").value,
+                    "serialNum" : document.getElementById("serialNum").value,
+                    "format"    : document.getElementById("format").value,
+                    "segment"   : document.getElementById("segment").value
+                }),
+                success:function(data){
+                    document.getElementById("content").innerHTML = data;
+                    console.log(data.message);
+                },
+                error:function(error){
+                    console.log(error.responseText);
                 }
               })
-              .then(res => {
-                console.log("에러 메시지 ->", res.message);
-              })//*/
         }
+
+        function showme(){
+        }
+
     </script>
     <body>
         <form>
-            from <input type='text' name='fromDate' value='20210722000000'><br>
-            to <input type='text' name='toDate' value='20210722235959'><br>
-            serialNum <input type='text' name='serialNum' value='abc'><br>
-            <input type='button' onclick='download()'/>
+            <table border="0">
+                <tr>
+                    <td>fromDate</td>
+                    <td><input type='text' id='fromDate' value='20210731180000'></td>
+                </tr>
+                <tr>
+                    <td>toDate</td><td><input type='text' id='toDate' value='20210731190000'></td>
+                </tr>
+                <tr>
+                    <td>siteCode</td>
+                    <td><input type='text' id='siteCode' value='unv_0001'></td>
+                </tr>
+                <tr>
+                    <td>serialNum</td>
+                    <td><input type='text' id='serialNum' value='24:0A:C4:22:37:72'></td>
+                </tr>
+                <tr>
+                    <td>key</td>
+                    <td><input type='text' id='key' value='Qkslffk@91'></td>
+                </tr>
+                <tr>
+                    <td>format</td>
+                    <td><input type='text' id='format' value='csv'></td>
+                </tr>
+                <tr>
+                    <td>segment</td>
+                    <td><input type='text' id='segment' value='raw'></td>
+                </tr>
+                <tr>
+                    <td><input type='button' text='download' value='download' onclick='download()'/></td>
+                    <td><input type='button' text='download' value='showme' onclick='showme()'/></td>
+                </tr>
+            </table>
         </form>
+        value<br>
+        <div id='content'></div>
     </body>
 </html>

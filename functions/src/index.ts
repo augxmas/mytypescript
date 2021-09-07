@@ -1,6 +1,21 @@
 import * as functions from "firebase-functions";
 import * as admin from 'firebase-admin';
 import * as fs from 'fs';
+import * as geoParam from 'ip-geolocation-api-sdk-typescript/GeolocationParams'
+import * as timeZone from 'ip-geolocation-api-sdk-typescript/TimezoneParams'
+
+
+export const getPicoHomeAirQualityDataFromRealTimeDatabase = functions.https.onRequest(async (request, response) => {
+  console.log("request ip " + request.ip);  
+  const geoParams = new geoParam.GeolocationParams();
+  geoParams.setIPAddress(request.ip);
+  console.log(geoParams.getLang());
+  const timeZones = new timeZone.TimezoneParams();
+  timeZones.setIPAddress(request.ip);
+  console.log("위도 " + timeZones.latitude);
+  console.log("경도 " + timeZones.longitude);
+  console.log(timeZones.getTimezone());
+});
 
 
 /*
@@ -21,6 +36,9 @@ admin.initializeApp({
  * 공공기관 : org_0001 ~ org_9999
  */
 const organizations:string  = "organizations";
+const averages:string  = "averages";
+const uploadlog:string  = "uploadlog";
+
 
 /**
  * 공기질 측정 결과 집합 
@@ -31,8 +49,15 @@ const airqualities:string = 'airqualities';
 admin.initializeApp();
 
 export const helloWorld = functions.https.onRequest((request, response) => {
-  functions.logger.info("Hello World", {structuredData: true});
-  response.send("Hello World");
+  functions.logger.info("Hello World ", {structuredData: true});
+  
+  response.setHeader("Access-Control-Allow-Origin","*");
+  response.setHeader("Access-Control-Allow-Methods", "OPTIONS,GET,POST,HEAD,PUT"); 
+  response.setHeader("Access-Control-Max-Age", "3600"); 
+  response.setHeader("Access-Control-Allow-Headers", "Origin,Accept,X-Requested-With,Content-Type,Access-Control-Request-Method,Access-Control-Request-Headers,Authorization");  
+  //*/
+  response.setHeader("Content-Type","application/json");
+  response.send("{'message':'Hello World !'}");
 });
 
 /**
@@ -72,20 +97,30 @@ export const helloWorld = functions.https.onRequest((request, response) => {
    try{
 
     functions.logger.info("dispatch", {structuredData: true});
-    
-    //let bucket = await admin.storage().bucket("mytypescript-62c14.appspot.com");
-    let bucket = await admin.storage().bucket("default-bucket");
+    const db = admin.firestore();
+    let bucket = await admin.storage().bucket("mytypescript-62c14.appspot.com");
+    //let bucket = await admin.storage().bucket("default-bucket");
     
     const fileName = await request.body.fileName;
 
+    const _arr = fileName.toString().replace(/\r\n/g,'\n').split('\-');
+    let uploadLog = {
+      unit      : _arr[0],
+      serialNum : _arr[1],
+      date      : _arr[2],
+      timeZone  : _arr[3]
+    }
+    let _doc = db.collection(uploadlog).doc();
+    _doc.create(uploadLog);    
 
-    //const options = {      destination: "/tmp/"+fileName    };
-    const options = {      destination: fileName    };
+
+    const options = {      destination: "/tmp/"+fileName    };
+    //const options = {      destination: fileName    };
 
     
     const _file = await bucket.file(fileName);
 
-    const db = admin.firestore();
+    
 
     try{
       await _file.download(options);
@@ -95,38 +130,117 @@ export const helloWorld = functions.https.onRequest((request, response) => {
 
     response.setHeader("Content-Type","application/json");
     let cnt:number = 0;
-    // let file = fs.readFileSync("/tmp/"+fileName);
-    let file = fs.readFileSync(fileName);
+    let file = fs.readFileSync("/tmp/"+fileName);
+    //let file = fs.readFileSync(fileName);
+
     // reference siteCode via log file name
     const dump = fileName.split('-');
 
     const msg = file.toString();
     const arr = msg.replace(/\r\n/g,'\n').split('\n');
-        
+
+    let _reportTime:number  = 0;
+    let _lat:number         = 0;
+    let _long:number        = 0;
+    let _pm5:number         = 0;
+    let _pm10:number        = 0;
+    let _temp:number        = 0;
+    let _humid:number       = 0;
+    let _vocs:number        = 0;
+    let _co2:number         = 0;
+    //let _timeZone:string;        
+
+    let siteCode:string   = "";
+    let serialNum:string  = "";;
+    let reportTime:string = "";;
+    let lat:string        = "";;
+    let long:string       = "";;
+    let pm5:string        = "";;
+    let pm10:string       = "";;
+    let temp:string       = "";;
+    let humid:string      = "";;
+    let vocs:string       = "";;
+    let co2:string        = "";;
+    let timeZone:string   = "";;
+
     for(let f of arr) {
       const str  = f.toString().replace(/\r\n/g,'\n').split('|');
-      let i:number = 0;
-        const obj = {
-          siteCode    : dump[0],
-          serialNum   : str[i++],
-          lat         : str[i++],
-          long        : str[i++],
-          reportTime  : str[i++],
-          pm5         : str[i++],
-          pm10        : str[i++],
-          temp        : str[i++],
-          humid       : str[i++],
-          vocs        : str[i++],
-          co2         : str[i++],
-          timeZone    : str[i++],
-        }
-      i = 0;
-      const doc = db.collection(airqualities).doc();
+      console.log("raw data => " + str );
       
+      let i:number = 0;
+
+      siteCode = dump[0];
+      serialNum = str[i++];
+
+      lat         =   str[i++];
+      _lat        +=  Number(lat);
+
+      long        =   str[i++];
+      _long       +=  Number(long);
+
+      reportTime  =   str[i++];
+      _reportTime +=  Number(reportTime);
+
+      pm5         =   str[i++];
+      _pm5        +=  Number(pm5);
+
+      pm10        =   str[i++];
+      _pm10       +=  Number(pm10);
+
+      temp        =   str[i++];
+      _temp       +=  Number(temp);
+
+      humid       =   str[i++];
+      _humid      +=  Number(humid);
+
+      vocs        =   str[i++];
+      _vocs       +=  Number(vocs);
+
+      co2         =   str[i++];
+      _co2        +=  Number(co2);
+
+      timeZone    = str[i++];
+
+      let obj = {
+        siteCode    : siteCode,
+        serialNum   : serialNum,
+        lat         : lat,
+        long        : long,
+        reportTime  : reportTime,
+        pm5         : pm5,
+        pm10        : pm10,
+        temp        : temp,
+        humid       : humid,
+        vocs        : vocs,
+        co2         : co2,
+        timeZone    : timeZone
+      }
+
+      i = 0;
+      let doc = db.collection(airqualities).doc();
       doc.create(obj);
       cnt++;
+
     }
     
+    let obj = {
+      siteCode    : siteCode,
+      serialNum   : serialNum,
+      lat         : (_lat/cnt).toString(),
+      long        : (_long/cnt).toString(),
+      reportTime  : (_reportTime/cnt).toString(),
+      pm5         : (_pm5/cnt).toString(),
+      pm10        : (_pm10/cnt).toString(),
+      temp        : (_temp/cnt).toString(),
+      humid       : (_humid/cnt).toString(),
+      vocs        : (_vocs/cnt).toString(),
+      co2         : (_co2/cnt).toString(),
+      timeZone    : timeZone
+    }      
+
+    let doc = db.collection(averages).doc();
+    doc.create(obj);      
+
     const result = {
       "rows" : cnt
     }
@@ -141,7 +255,6 @@ export const helloWorld = functions.https.onRequest((request, response) => {
     response.status(500).json(result);  
   }
 
-  
 });
 
 
@@ -161,17 +274,33 @@ export const helloWorld = functions.https.onRequest((request, response) => {
  */
 export const getData = functions.https.onRequest(async(request, response) => {
   
+  
+
   functions.logger.info("getData", {structuredData: true});
 
-  const serialNum     =  request.body.serialNum;
-  const fromDate      = request.body.fromDate;
-  const toDate        =  request.body.toDate;
-  const siteCode      =  request.body.siteCode;
-  const key           = request.body.key;
-  const format:string        = request.body.format;
+  let serialNum     = request.body.serialNum;
+  let fromDate      = request.body.fromDate;
+  let toDate        = request.body.toDate;
+  let siteCode      = request.body.siteCode;
+  let key           = request.body.key;
+  let format        = request.body.format;
+  let segment       = request.body.segment;
 
-  const iFromDate = Number(fromDate);
-  const iToDate = Number(toDate);
+  let iFromDate     = Number(fromDate);
+  let iToDate       = Number(toDate);
+
+  /*
+  console.log("serialNum " + serialNum );
+  console.log("fromDate " + fromDate);
+  console.log("toDate " + toDate);
+  console.log("siteCode " + siteCode );
+  console.log("key " + key);
+  console.log("format " + format);
+  console.log("segment " + segment );
+  console.log("iFromDate " + iFromDate );
+  console.log("iToDate " + iToDate );
+  //*/
+  
 
   if(iToDate - iFromDate > 10000){ // 1 hour
     const obj = {
@@ -181,8 +310,33 @@ export const getData = functions.https.onRequest(async(request, response) => {
     return;
   }
 
+  response.setHeader("Access-Control-Allow-Origin","*");
+  response.setHeader("Access-Control-Allow-Methods", "OPTIONS,GET,POST,HEAD,PUT"); 
+  response.setHeader("Access-Control-Max-Age", "3600"); 
+  response.setHeader("Access-Control-Allow-Headers", "Origin,Accept,X-Requested-With,Content-Type,Access-Control-Request-Method,Access-Control-Request-Headers,Authorization");  
+  //*/
+  
+
+  
+
   const db = admin.firestore();
+
+  if(siteCode === null || key === null || typeof siteCode === 'undefined' || typeof key === 'undefined' ){
+    console.log("=================================");
+    const obj = {
+      message : "Internal Server Error",
+      content : "Condition Not Found"
+    };
+    response.status(200).json(obj);  
+    return;
+   }
+
   let ref = db.collection(organizations).where("siteCode", "==" , siteCode).where("key", "==" , key).get();
+
+  let table:string = "";
+
+
+
   await ref.then(function( snapshot){
     if ( snapshot.size == 0 ){
       const obj = {
@@ -201,8 +355,16 @@ export const getData = functions.https.onRequest(async(request, response) => {
     return;
   });
 
-  ref = db.collection(airqualities)
+  if(segment.toLocaleLowerCase() === "raw" ){
+    table = airqualities;
+  }
+  else if(segment.toLocaleLowerCase() === "avg"){
+    table = averages;
+  }
+  console.log("query table ? " + table + " segment " + segment);
+  ref = db.collection(table)
   .where("siteCode","==", siteCode)
+  .where("serialNum","==", serialNum)
   .where("reportTime", ">=" , fromDate)
   .where("reportTime", "<" , toDate).get();//*/
 
@@ -228,11 +390,21 @@ export const getData = functions.https.onRequest(async(request, response) => {
           + doc.get("timeZone")           + ","
           + doc.get("reportTime")         + ","
           + doc.get("lat")                + "," 
-          + doc.get("long")               + "," +"\n";
+          + doc.get("long")               + "\n";
           buffer += str;       
       });
       response.setHeader("Content-Disposition", "attachment; filename=" + serialNum + "_" + fromDate+ "_"  + toDate + ".csv");
-      response.status(200).send(buffer) ;
+      if(str === ""){
+        const obj = {
+          message : "Not Found",
+          content : "Plz, check condition"
+        };
+        response.status(404).json(obj);          
+        return;
+      }else{
+        response.status(200).send(buffer) ;
+        return;
+      }
       return;
     }).catch(error=>{
       console.log(error);
@@ -245,12 +417,8 @@ export const getData = functions.https.onRequest(async(request, response) => {
   }
 
   if(format.toLocaleLowerCase() === "json"){
+    response.setHeader("Content-Type","application/json");
     try{
-      try{
-        response.setHeader("Content-Type","application/json");
-      }catch(error){
-        console.log(error);
-      }
       let outputArray:any = [];
   
       (await ref).forEach(  (doc)=>{
@@ -268,7 +436,19 @@ export const getData = functions.https.onRequest(async(request, response) => {
           long : doc.get("long"),
         });
       });
-      response.status(200).json(outputArray);
+      if(outputArray.length == 0){
+        const obj = {
+          message : "Not Found",
+          content : "Plz, check condition"
+        };
+        response.status(404).json(obj);          
+        return;
+
+      }else{
+        response.status(200).json(outputArray);
+        return;
+      }
+      
     }catch(error){
       console.log(error);
       const obj = {
@@ -280,6 +460,9 @@ export const getData = functions.https.onRequest(async(request, response) => {
     return;  
   
   }
+
+
+  
 
 });
 
@@ -361,3 +544,4 @@ export const upsertOrganization = functions.https.onRequest((request, response) 
   }
   
 }); 
+
